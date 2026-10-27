@@ -1,0 +1,57 @@
+# ==========================================
+# Trend-Bot Configuration
+# ==========================================
+
+# 1. Watchlist
+# Tickers the bot will monitor. 
+watchlist:
+  - LLY
+  - AAPL
+  - MSFT
+  - NVDA
+
+# 2. Trend Detection Parameters
+# Used to confirm the stock is in an uptrend before looking for entries.
+trend:
+  sma_short: 20        # Short-term moving average
+  sma_long: 50         # Long-term moving average
+  adx_period: 14       # Average Directional Index period
+  adx_threshold: 25    # ADX > 25 indicates a strong trend
+  rel_strength_days: 20 # Lookback for relative strength vs. SPY
+
+# 3. Entry Signals
+# The specific conditions required to trigger a buy.
+signals:
+  pullback:
+    rsi_period: 14
+    rsi_threshold: 40  # Buy when RSI dips below this (in an uptrend)
+    support_proximity: 0.02 # Must be within 2% of the SMA
+  breakout:
+    lookback_period: 20 # Look for a 20-day high
+    volume_multiplier: 1.5 # Breakout must have 1.5x average volume
+
+# 4. News Judge Agent
+# Rules for the "noise vs. real risk" filter.
+news:
+  lookback_hours: 24   # How far back to scrape news
+  veto_on_material: true # Block trade if real bad news is found
+  trusted_sources:     # Sources that count as "real news"
+    - "Reuters"
+    - "Bloomberg"
+    - "SEC"
+    - "Wall Street Journal"
+
+# 5. Risk Management
+# Hard limits to protect the $500 capital.
+risk:
+  max_position_pct: 0.05 # Max 5% of capital per trade ($25)
+  stop_loss_pct: 0.03    # Hard stop-loss at 3%
+  take_profit_pct: 0.06  # Optional take-profit at 6% (2:1 R/R)
+  max_open_positions: 3  # Total concurrent trades
+
+# 6. Execution & System
+# Mode settings and infrastructure constraints.
+system:
+  mode: "signal_only"    # "signal_only" (texts you), "paper" (Alpaca), or "live" (Webull)
+  poll_interval_minutes: 15 # How often to scan the market
+  log_level: "INFO"
