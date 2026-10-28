@@ -117,7 +117,8 @@ def run_bot_cycle(config: dict):
             
         current_price = stock_data['close'].iloc[-1]
         
-        if not is_uptrend(stock_data, market_data, config['trend']):
+        # --- UPDATED LINE: Pass ticker into is_uptrend ---
+        if not is_uptrend(stock_data, market_data, config['trend'], ticker=ticker):
             logger.info(f"[{ticker}] Not in an uptrend. Skipping.")
             continue
             
@@ -145,7 +146,6 @@ def run_bot_cycle(config: dict):
             logger.info(f"[{ticker}] Price action is normal. Skipping AI check.")
             
         # --- EXECUTION ---
-        # Calculate size based on ACCOUNT EQUITY, not Buying Power (Margin)
         max_dollar_amount = account_equity * config['risk']['max_position_pct']
         shares = calculate_position_size(
             account_capital=account_equity, 
@@ -157,7 +157,6 @@ def run_bot_cycle(config: dict):
             logger.info(f"[{ticker}] ✅ Buying ${max_dollar_amount:.2f} of shares at ${current_price:.2f}.")
             if execute_buy_order(ticker, max_dollar_amount):
                 open_positions_count += 1
-                # Note: notify_buy is now called inside broker.py to capture actual fill data
         else:
             logger.warning(f"[{ticker}] Signal valid, but account size too small.")
 

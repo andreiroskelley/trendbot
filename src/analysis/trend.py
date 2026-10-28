@@ -11,13 +11,14 @@ from src.analysis.indicators import calculate_sma, calculate_adx, calculate_rela
 
 logger = logging.getLogger(__name__)
 
-def is_uptrend(stock_data: pd.DataFrame, market_data: pd.DataFrame, config: dict) -> bool:
+def is_uptrend(stock_data: pd.DataFrame, market_data: pd.DataFrame, config: dict, ticker: str = "") -> bool:
     """
     Determines if a stock is in an uptrend based on the provided configuration.
     
     :param stock_data: DataFrame with 'high', 'low', 'close' for the stock.
     :param market_data: DataFrame with 'close' for the broader market (e.g., SPY).
     :param config: The 'trend' dictionary from settings.yaml.
+    :param ticker: The ticker symbol (used to bypass RS for Bitcoin).
     :return: True if in an uptrend, False otherwise.
     """
     if len(stock_data) < config.get('sma_long', 50):
@@ -47,17 +48,23 @@ def is_uptrend(stock_data: pd.DataFrame, market_data: pd.DataFrame, config: dict
     adx_trend = current_adx > config['adx_threshold']
 
     # 3. Relative Strength (Stock vs Market)
-    rs_series = calculate_relative_strength(close, market_data['close'], config['rel_strength_days'])
-    
-    if len(rs_series.dropna()) > config['rel_strength_days']:
-        rs_now = rs_series.iloc[-1]
-        rs_past = rs_series.iloc[-(config['rel_strength_days'] + 1)]
-        rs_trend = rs_now > rs_past
+    # Bitcoin is the crypto benchmark. Comparing it to itself yields a flat line (RS=100).
+    # For crypto, we bypass RS and rely purely on MA + ADX.
+    if ticker == "BTC/USD":
+        rs_trend = True
     else:
-        rs_trend = False
+        rs_series = calculate_relative_strength(close, market_data['close'], config['rel_strength_days'])
+        
+        if len(rs_series.dropna()) > config['rel_strength_days']:
+            rs_now = rs_series.iloc[-1]
+            rs_past = rs_series.iloc[-(config['rel_strength_days'] + 1)]
+            rs_trend = rs_now > rs_past
+        else:
+            rs_trend = False
 
     # Log the breakdown for debugging
-    logger.info(f"Trend Check -> MA: {ma_trend}, ADX: {adx_trend} ({current_adx:.2f}), RS: {rs_trend}")
+    rs_display = "BYPASSED" if ticker == "BTC/USD" else str(rs_trend)
+    logger.info(f"Trend Check -> MA: {ma_trend}, ADX: {adx_trend} ({current_adx:.2f}), RS: {rs_display}")
 
     # Force standard python boolean to prevent NumPy type errors
     final_result = bool(ma_trend and adx_trend and rs_trend)

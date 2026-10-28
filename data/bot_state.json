@@ -1,0 +1,6 @@
+{
+  "trading_disabled": true,
+  "disabled_at": "2026-10-28T18:59:36.068627+00:00",
+  "reason": "circuit_breaker",
+  "equity_at_trigger": 0.0
+}
