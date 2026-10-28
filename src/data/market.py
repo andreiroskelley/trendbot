@@ -29,6 +29,15 @@ data_client = StockHistoricalDataClient(ALPACA_KEY, ALPACA_SECRET)
 crypto_client = CryptoHistoricalDataClient(ALPACA_KEY, ALPACA_SECRET)
 trading_client = TradingClient(ALPACA_KEY, ALPACA_SECRET, paper=True)
 
+# Benchmarks per asset class. Stocks compare to SPY (04:00 UTC daily bars),
+# crypto compares to BTC/USD (00:00 UTC). Mixing them yields zero aligned
+# timestamps and permanently breaks Relative Strength.
+BENCHMARKS = {
+    "stock": "SPY",
+    "crypto": "BTC/USD",
+}
+
+
 def _fetch_bars(symbol: str, days_back: int = 150) -> pd.DataFrame:
     """Helper function to fetch historical bars from Alpaca (Stocks or Crypto)."""
     end_date = datetime.now()
@@ -76,15 +85,24 @@ def _fetch_bars(symbol: str, days_back: int = 150) -> pd.DataFrame:
         logger.error(f"Failed to fetch data for {symbol}: {e}")
         return pd.DataFrame()
 
+
 def get_market_data(ticker: str) -> pd.DataFrame:
     """Fetches the last 100 days of daily data for a given ticker (Stock or Crypto)."""
     logger.info(f"Fetching market data for {ticker}...")
     return _fetch_bars(ticker)
 
-def get_market_benchmark() -> pd.DataFrame:
-    """Fetches the benchmark for Relative Strength comparison. Using BTC/USD for crypto testing."""
-    logger.info("Fetching market benchmark (BTC/USD)...")
-    return _fetch_bars("BTC/USD")
+
+def get_market_benchmark(ticker: str) -> pd.DataFrame:
+    """
+    Fetches the benchmark for Relative Strength comparison.
+    Equities are compared to SPY; crypto is compared to BTC/USD.
+    Mixing the two breaks timestamp alignment (stocks 04:00 UTC, crypto 00:00 UTC).
+    """
+    asset_class = "crypto" if "/" in ticker else "stock"
+    benchmark = BENCHMARKS[asset_class]
+    logger.info(f"Fetching market benchmark ({benchmark}) for {ticker}...")
+    return _fetch_bars(benchmark)
+
 
 def get_account_capital() -> float:
     """Fetches the real buying power from your Alpaca Paper account."""
@@ -94,3 +112,28 @@ def get_account_capital() -> float:
     except Exception as e:
         logger.error(f"Failed to fetch account balance: {e}")
         return 0.0
+
+
+def get_account_equity() -> float:
+    """Fetches total account equity (cash + positions) from Alpaca."""
+    try:
+        account = trading_client.get_account()
+        return float(account.equity)
+    except Exception as e:
+        logger.error(f"Failed to fetch account equity: {e}")
+        return 0.0
+
+
+def is_market_open() -> bool:
+    """
+    Returns True if the US equity market is currently open, per Alpaca's clock.
+    This is the same source of truth Alpaca uses to accept/reject orders,
+    so it correctly handles holidays and half-days.
+    Fails safe: returns False on API error so we never queue a stock order while closed.
+    """
+    try:
+        clock = trading_client.get_clock()
+        return bool(clock.is_open)
+    except Exception as e:
+        logger.error(f"Failed to fetch market clock: {e}")
+        return False

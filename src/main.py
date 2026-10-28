@@ -5,13 +5,20 @@ src/main.py
 import logging
 import yaml
 import time
-from src.data.market import get_market_data, get_market_benchmark, get_account_capital
+from src.data.market import (
+    get_market_data,
+    get_market_benchmark,
+    get_account_capital,
+    get_account_equity,
+    is_market_open,
+)
 from src.data.news import get_recent_news
 from src.analysis.trend import is_uptrend
 from src.signals.pullback import check_pullback_signal
 from src.signals.breakout import check_breakout_signal
 from src.execution.risk import calculate_position_size, check_max_positions
 from src.execution.broker import execute_buy_order, get_open_positions, execute_sell_order
+from src.execution.circuit_breaker import check_circuit_breaker
 from src.agent.news_judge import NewsJudgeAgent
 
 # --- Setup Logging ---
@@ -52,6 +59,11 @@ def check_stop_losses(config: dict):
 def run_bot_cycle(config: dict):
     logger.info("=== Starting Bot Cycle ===")
     
+    # 0. Circuit breaker — highest priority, before anything else
+    if check_circuit_breaker(config['risk']['circuit_breaker']):
+        logger.critical("Trading disabled by circuit breaker. Skipping cycle.")
+        return
+    
     # 1. First, check if we need to dump any bad positions
     check_stop_losses(config)
     
@@ -64,15 +76,16 @@ def run_bot_cycle(config: dict):
         logger.error("No buying power available. Aborting cycle.")
         return
     logger.info(f"Current Alpaca Buying Power: ${account_capital:.2f}")
+    logger.info(f"Current Alpaca Equity: ${get_account_equity():.2f}")
+    
+    # 3. Market-hours gate — fetched once per cycle, per Alpaca's clock.
+    #    Only US equities are gated; crypto trades 24/7 and is always eligible.
+    equity_market_open = is_market_open()
+    logger.info(f"US equity market open: {equity_market_open}")
     
     open_positions_list = get_open_positions()
     open_positions_count = len(open_positions_list)
     open_symbols = [pos['symbol'] for pos in open_positions_list]
-    
-    market_data = get_market_benchmark()
-    if market_data.empty:
-        logger.error("Could not fetch market benchmark. Aborting cycle.")
-        return
     
     for ticker in config['watchlist']:
         logger.info(f"Scanning {ticker}...")
@@ -85,9 +98,21 @@ def run_bot_cycle(config: dict):
             logger.warning("Max positions reached. Stopping scan.")
             break
 
+        # Skip equity symbols when the US market is closed. Crypto is 24/7.
+        is_crypto = "/" in ticker
+        if not is_crypto and not equity_market_open:
+            logger.info(f"[{ticker}] US equity market closed. Skipping stock.")
+            continue
+
         stock_data = get_market_data(ticker)
         if stock_data.empty:
             logger.warning(f"[{ticker}] No data available. Skipping.")
+            continue
+        
+        # Benchmark must match the asset class (SPY for stocks, BTC/USD for crypto)
+        market_data = get_market_benchmark(ticker)
+        if market_data.empty:
+            logger.warning(f"[{ticker}] No benchmark data. Skipping.")
             continue
             
         current_price = stock_data['close'].iloc[-1]

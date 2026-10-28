@@ -46,10 +46,15 @@ news:
 # 5. Risk Management
 # Hard limits to protect the $500 capital.
 risk:
-  max_position_pct: 0.05 # Max 5% of capital per trade ($25)
-  stop_loss_pct: 0.03    # Hard stop-loss at 3%
-  take_profit_pct: 0.06  # Optional take-profit at 6% (2:1 R/R)
-  max_open_positions: 3  # Total concurrent trades
+  max_position_pct: 0.05
+  stop_loss_pct: 0.03
+  take_profit_pct: 0.06
+  max_open_positions: 3
+  circuit_breaker:
+    enabled: true
+    min_equity: 400.0
+    liquidate_on_trigger: true
+    state_file: "data/bot_state.json"
 
 # 6. Execution & System
 # Mode settings and infrastructure constraints.
