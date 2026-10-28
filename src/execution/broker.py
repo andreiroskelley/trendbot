@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, AssetClass
-from src.notifications import notify_buy, notify_sell
+from src.notifications import notify_buy
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -20,19 +20,12 @@ ALPACA_SECRET = os.getenv("ALPACA_SECRET_KEY")
 trading_client = TradingClient(ALPACA_KEY, ALPACA_SECRET, paper=True)
 
 def execute_buy_order(ticker: str, dollar_amount: float) -> bool:
-    """
-    Places a market buy order for a given dollar amount.
-    Supports both fractional stocks and crypto.
-    """
+    """Places a market buy order for a given dollar amount."""
     if dollar_amount <= 0:
         return False
         
-    # Determine if it's crypto based on the ticker format (e.g., BTC/USD)
     is_crypto = "/" in ticker
     asset_class = AssetClass.CRYPTO if is_crypto else AssetClass.US_EQUITY
-    
-    # Crypto requires GTC (Good 'Til Cancelled) because the market never closes.
-    # Stocks use DAY.
     time_in_force = TimeInForce.GTC if is_crypto else TimeInForce.DAY
         
     try:
@@ -43,10 +36,30 @@ def execute_buy_order(ticker: str, dollar_amount: float) -> bool:
             time_in_force=time_in_force,
             asset_class=asset_class
         )
-        notify_buy(ticker, dollar_amount, price=0.0, shares=0.0)
         
         order = trading_client.submit_order(order_data)
         logger.info(f"✅ ORDER PLACED: Bought ${dollar_amount:.2f} of {ticker}. Order ID: {order.id}")
+        
+        # --- NOTIFICATION LOGIC ---
+        # Attempt to get actual fill data. If not filled yet, estimate.
+        filled_price = float(order.filled_avg_price) if order.filled_avg_price else 0.0
+        filled_qty = float(order.filled_qty) if order.filled_qty else 0.0
+        
+        if filled_qty > 0 and filled_price > 0:
+            notify_buy(ticker, dollar_amount, filled_price, filled_qty)
+        else:
+            # Fallback if Alpaca hasn't returned fill data yet (e.g., crypto or slow fills)
+            # We estimate the shares based on requested notional / current market price
+            from src.data.market import get_market_data
+            try:
+                current_price = get_market_data(ticker)['close'].iloc[-1]
+                estimated_shares = dollar_amount / current_price
+                notify_buy(ticker, dollar_amount, current_price, estimated_shares)
+            except Exception:
+                logger.warning(f"Order submitted but fill data unavailable. Notification skipped or estimated.")
+                # Send a generic notification so you know it happened
+                notify_buy(ticker, dollar_amount, 0.0, 0.0)
+                
         return True
         
     except Exception as e:
@@ -65,7 +78,7 @@ def execute_sell_order(ticker: str, shares: float) -> bool:
     try:
         order_data = MarketOrderRequest(
             symbol=ticker,
-            qty=str(round(shares, 6)), # Alpaca requires fractional qty as a string
+            qty=str(round(shares, 6)),
             side=OrderSide.SELL,
             time_in_force=time_in_force,
             asset_class=asset_class
@@ -88,7 +101,7 @@ def get_open_positions() -> list:
                 "qty": float(pos.qty),
                 "avg_entry_price": float(pos.avg_entry_price),
                 "current_price": float(pos.current_price),
-                "unrealized_plpc": float(pos.unrealized_plpc) # Percentage gain/loss
+                "unrealized_plpc": float(pos.unrealized_plpc)
             })
         return pos_list
     except Exception as e:

@@ -14,13 +14,14 @@ from src.data.market import (
 )
 from src.data.news import get_recent_news
 from src.analysis.trend import is_uptrend
+from src.analysis.anomaly import is_suspicious_drop
 from src.signals.pullback import check_pullback_signal
 from src.signals.breakout import check_breakout_signal
 from src.execution.risk import calculate_position_size, check_max_positions
 from src.execution.broker import execute_buy_order, get_open_positions, execute_sell_order
 from src.execution.circuit_breaker import check_circuit_breaker
 from src.agent.news_judge import NewsJudgeAgent
-from src.notifications import notify_buy, notify_sell, notify_startup
+from src.notifications import notify_sell, notify_startup
 
 # --- Setup Logging ---
 logging.basicConfig(
@@ -50,7 +51,7 @@ def check_stop_losses(config: dict):
         ticker = pos['symbol']
         unrealized_plpc = pos['unrealized_plpc'] # e.g., -0.04 means -4%
         
-        # If the loss is greater than our stop-loss threshold (e.g., < -3%)
+        # If the loss is greater than our stop-loss threshold
         if unrealized_plpc <= -stop_loss_pct:
             logger.warning(f"🛑 STOP LOSS HIT for {ticker}! Current P&L: {unrealized_plpc*100:.2f}%")
             if execute_sell_order(ticker, pos['qty']):
@@ -69,19 +70,18 @@ def run_bot_cycle(config: dict):
     # 1. First, check if we need to dump any bad positions
     check_stop_losses(config)
     
-    # 2. Setup for new trades (Using Auto-Approver instead of Ollama)
+    # 2. Setup for new trades
     llm = AutoApproveLLM()
     news_agent = NewsJudgeAgent(llm_client=llm, config=config['news'])
     
-    account_capital = get_account_capital()
-    if account_capital <= 0:
-        logger.error("No buying power available. Aborting cycle.")
+    account_equity = get_account_equity()
+    if account_equity <= 0:
+        logger.error("No account equity available. Aborting cycle.")
         return
-    logger.info(f"Current Alpaca Buying Power: ${account_capital:.2f}")
-    logger.info(f"Current Alpaca Equity: ${get_account_equity():.2f}")
+    logger.info(f"Current Alpaca Buying Power: ${get_account_capital():.2f}")
+    logger.info(f"Current Alpaca Equity: ${account_equity:.2f}")
     
-    # 3. Market-hours gate — fetched once per cycle, per Alpaca's clock.
-    #    Only US equities are gated; crypto trades 24/7 and is always eligible.
+    # 3. Market-hours gate
     equity_market_open = is_market_open()
     logger.info(f"US equity market open: {equity_market_open}")
     
@@ -100,7 +100,6 @@ def run_bot_cycle(config: dict):
             logger.warning("Max positions reached. Stopping scan.")
             break
 
-        # Skip equity symbols when the US market is closed. Crypto is 24/7.
         is_crypto = "/" in ticker
         if not is_crypto and not equity_market_open:
             logger.info(f"[{ticker}] US equity market closed. Skipping stock.")
@@ -111,7 +110,6 @@ def run_bot_cycle(config: dict):
             logger.warning(f"[{ticker}] No data available. Skipping.")
             continue
         
-        # Benchmark must match the asset class (SPY for stocks, BTC/USD for crypto)
         market_data = get_market_benchmark(ticker)
         if market_data.empty:
             logger.warning(f"[{ticker}] No benchmark data. Skipping.")
@@ -132,14 +130,25 @@ def run_bot_cycle(config: dict):
             
         logger.info(f"[{ticker}] 🚨 ENTRY SIGNAL TRIGGERED!")
         
-        headlines = get_recent_news(ticker)
-        if news_agent.should_veto_trade(ticker, headlines):
-            logger.warning(f"[{ticker}] ❌ TRADE VETOED.")
-            continue
+        # --- Z-SCORE ANOMALY DETECTION ---
+        z_config = config['signals'].get('z_score', {'period': 20, 'threshold': -3.0})
+        
+        if is_suspicious_drop(stock_data, z_config):
+            logger.warning(f"[{ticker}] ⚠️ Suspicious drop detected! Consulting AI...")
+            headlines = get_recent_news(ticker)
+            if news_agent.should_veto_trade(ticker, headlines):
+                logger.warning(f"[{ticker}] ❌ TRADE VETOED BY AI.")
+                continue
+            else:
+                logger.info(f"[{ticker}] AI says the news is NOISE. Proceeding with trade.")
+        else:
+            logger.info(f"[{ticker}] Price action is normal. Skipping AI check.")
             
-        max_dollar_amount = account_capital * config['risk']['max_position_pct']
+        # --- EXECUTION ---
+        # Calculate size based on ACCOUNT EQUITY, not Buying Power (Margin)
+        max_dollar_amount = account_equity * config['risk']['max_position_pct']
         shares = calculate_position_size(
-            account_capital=account_capital,
+            account_capital=account_equity, 
             current_price=current_price,
             max_position_pct=config['risk']['max_position_pct']
         )
@@ -148,7 +157,7 @@ def run_bot_cycle(config: dict):
             logger.info(f"[{ticker}] ✅ Buying ${max_dollar_amount:.2f} of shares at ${current_price:.2f}.")
             if execute_buy_order(ticker, max_dollar_amount):
                 open_positions_count += 1
-                notify_buy(ticker, max_dollar_amount, current_price, shares)
+                # Note: notify_buy is now called inside broker.py to capture actual fill data
         else:
             logger.warning(f"[{ticker}] Signal valid, but account size too small.")
 
@@ -158,7 +167,6 @@ def main():
     config = load_config()
     logger.info(f"Bot starting in mode: {config['system']['mode']}")
 
-    # Startup heartbeat — tells you the service came back after a restart/reboot
     try:
         notify_startup(get_account_equity(), is_market_open())
     except Exception as e:

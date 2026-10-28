@@ -1,0 +1,22 @@
+Evolving 30 strategies over 10 generations (2023 Data, 30 Stocks)...
+
+Gen 1/10 | Best Return: 9.24% | Params: RSI=57, Stop=6.7%, ADX=33
+Gen 2/10 | Best Return: 9.24% | Params: RSI=57, Stop=6.7%, ADX=33
+Gen 3/10 | Best Return: 9.24% | Params: RSI=57, Stop=6.7%, ADX=33
+Gen 4/10 | Best Return: 9.24% | Params: RSI=57, Stop=6.7%, ADX=33
+Gen 5/10 | Best Return: 9.24% | Params: RSI=57, Stop=6.7%, ADX=33
+Gen 6/10 | Best Return: 9.24% | Params: RSI=57, Stop=6.7%, ADX=33
+Gen 7/10 | Best Return: 9.24% | Params: RSI=57, Stop=6.7%, ADX=33
+Gen 8/10 | Best Return: 9.24% | Params: RSI=57, Stop=6.7%, ADX=33
+Gen 9/10 | Best Return: 9.24% | Params: RSI=57, Stop=6.7%, ADX=33
+Gen 10/10 | Best Return: 9.24% | Params: RSI=57, Stop=6.7%, ADX=33
+
+========================================
+OPTIMAL PARAMETERS FOUND (2023, 30 Stocks)
+========================================
+Total Return: 9.24%
+RSI Threshold: 57
+Support Proximity: 1.70%
+Stop Loss: 6.70%
+ADX Threshold: 33
+========================================

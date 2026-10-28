@@ -51,3 +51,12 @@ def notify_sell(ticker: str, shares: float, reason: str, pnl_pct: float | None =
 
 def notify_alert(message: str) -> None:
     _post(f"⚠️ **ALERT**\n{message}")
+
+
+def notify_startup(equity: float, market_open: bool) -> None:
+    state = "OPEN" if market_open else "CLOSED"
+    _post(
+        f"🤖 **TrendBot started**\n"
+        f"Equity: ${equity:,.2f}\n"
+        f"US market: {state}"
+    )
