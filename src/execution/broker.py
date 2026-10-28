@@ -1,6 +1,6 @@
 """
 src/execution/broker.py
-Handles order execution via Alpaca.
+Handles order execution via Alpaca for both Stocks and Crypto.
 """
 
 import os
@@ -8,7 +8,7 @@ import logging
 from dotenv import load_dotenv
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
-from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.trading.enums import OrderSide, TimeInForce, AssetClass
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -20,19 +20,27 @@ trading_client = TradingClient(ALPACA_KEY, ALPACA_SECRET, paper=True)
 
 def execute_buy_order(ticker: str, dollar_amount: float) -> bool:
     """
-    Places a market buy order for a given dollar amount (fractional shares).
+    Places a market buy order for a given dollar amount.
+    Supports both fractional stocks and crypto.
     """
     if dollar_amount <= 0:
         return False
         
+    # Determine if it's crypto based on the ticker format (e.g., BTC/USD)
+    is_crypto = "/" in ticker
+    asset_class = AssetClass.CRYPTO if is_crypto else AssetClass.US_EQUITY
+    
+    # Crypto requires GTC (Good 'Til Cancelled) because the market never closes.
+    # Stocks use DAY.
+    time_in_force = TimeInForce.GTC if is_crypto else TimeInForce.DAY
+        
     try:
-        # Using 'notional' tells Alpaca to buy this exact dollar amount 
-        # and calculate the fractional shares for us.
         order_data = MarketOrderRequest(
             symbol=ticker,
-            notional=round(dollar_amount, 2), # Alpaca requires 2 decimal places
+            notional=round(dollar_amount, 2), 
             side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY
+            time_in_force=time_in_force,
+            asset_class=asset_class
         )
         
         order = trading_client.submit_order(order_data)
@@ -43,26 +51,22 @@ def execute_buy_order(ticker: str, dollar_amount: float) -> bool:
         logger.error(f"❌ FAILED to place order for {ticker}: {e}")
         return False
 
-def get_open_positions() -> list:
-    """Fetches a list of currently open positions from Alpaca."""
-    try:
-        positions = trading_client.get_all_positions()
-        return [pos.symbol for pos in positions]
-    except Exception as e:
-        logger.error(f"Failed to fetch positions: {e}")
-        return []
-
 def execute_sell_order(ticker: str, shares: float) -> bool:
     """Sells a specific number of shares (supports fractional)."""
     if shares <= 0:
         return False
+        
+    is_crypto = "/" in ticker
+    asset_class = AssetClass.CRYPTO if is_crypto else AssetClass.US_EQUITY
+    time_in_force = TimeInForce.GTC if is_crypto else TimeInForce.DAY
         
     try:
         order_data = MarketOrderRequest(
             symbol=ticker,
             qty=str(round(shares, 6)), # Alpaca requires fractional qty as a string
             side=OrderSide.SELL,
-            time_in_force=TimeInForce.DAY
+            time_in_force=time_in_force,
+            asset_class=asset_class
         )
         order = trading_client.submit_order(order_data)
         logger.info(f"✅ ORDER PLACED: Sold {shares} shares of {ticker}.")

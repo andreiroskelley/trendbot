@@ -9,6 +9,8 @@ watchlist:
   - AAPL
   - MSFT
   - NVDA
+  - BTC/USD
+  - ETH/USD
 
 # 2. Trend Detection Parameters
 # Used to confirm the stock is in an uptrend before looking for entries.
