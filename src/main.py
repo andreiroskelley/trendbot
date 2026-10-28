@@ -20,6 +20,7 @@ from src.execution.risk import calculate_position_size, check_max_positions
 from src.execution.broker import execute_buy_order, get_open_positions, execute_sell_order
 from src.execution.circuit_breaker import check_circuit_breaker
 from src.agent.news_judge import NewsJudgeAgent
+from src.notifications import notify_buy, notify_sell, notify_startup
 
 # --- Setup Logging ---
 logging.basicConfig(
@@ -52,7 +53,8 @@ def check_stop_losses(config: dict):
         # If the loss is greater than our stop-loss threshold (e.g., < -3%)
         if unrealized_plpc <= -stop_loss_pct:
             logger.warning(f"🛑 STOP LOSS HIT for {ticker}! Current P&L: {unrealized_plpc*100:.2f}%")
-            execute_sell_order(ticker, pos['qty'])
+            if execute_sell_order(ticker, pos['qty']):
+                notify_sell(ticker, pos['qty'], reason="stop-loss", pnl_pct=unrealized_plpc)
         else:
             logger.info(f"[{ticker}] P&L is {unrealized_plpc*100:.2f}%. Holding.")
 
@@ -145,7 +147,8 @@ def run_bot_cycle(config: dict):
         if shares > 0:
             logger.info(f"[{ticker}] ✅ Buying ${max_dollar_amount:.2f} of shares at ${current_price:.2f}.")
             if execute_buy_order(ticker, max_dollar_amount):
-                open_positions_count += 1 
+                open_positions_count += 1
+                notify_buy(ticker, max_dollar_amount, current_price, shares)
         else:
             logger.warning(f"[{ticker}] Signal valid, but account size too small.")
 
@@ -154,6 +157,12 @@ def run_bot_cycle(config: dict):
 def main():
     config = load_config()
     logger.info(f"Bot starting in mode: {config['system']['mode']}")
+
+    # Startup heartbeat — tells you the service came back after a restart/reboot
+    try:
+        notify_startup(get_account_equity(), is_market_open())
+    except Exception as e:
+        logger.error(f"Startup notification failed: {e}")
     
     while True:
         run_bot_cycle(config)

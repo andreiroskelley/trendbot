@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, AssetClass
+from src.notifications import notify_buy, notify_sell
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ def execute_buy_order(ticker: str, dollar_amount: float) -> bool:
             time_in_force=time_in_force,
             asset_class=asset_class
         )
+        notify_buy(ticker, dollar_amount, price=0.0, shares=0.0)
         
         order = trading_client.submit_order(order_data)
         logger.info(f"✅ ORDER PLACED: Bought ${dollar_amount:.2f} of {ticker}. Order ID: {order.id}")

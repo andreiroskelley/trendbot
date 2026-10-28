@@ -12,10 +12,9 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
-
 from src.data.market import get_account_equity
 from src.execution.broker import execute_sell_order, get_open_positions
+from src.notifications import notify_alert, notify_sell
 
 logger = logging.getLogger(__name__)
 
@@ -52,18 +51,6 @@ def is_trading_disabled(state_path: Path) -> bool:
     return bool(load_state(state_path).get("trading_disabled", False))
 
 
-def send_alert(config: dict, message: str) -> None:
-    webhook = os.getenv("DISCORD_WEBHOOK_URL", "").strip()
-    if not webhook:
-        logger.critical(f"CIRCUIT BREAKER ALERT (no webhook configured): {message}")
-        return
-    try:
-        requests.post(webhook, json={"content": f"🛑 **Circuit Breaker**\n{message}"}, timeout=10)
-    except Exception as e:
-        logger.error(f"Failed to send alert: {e}")
-        logger.critical(f"CIRCUIT BREAKER ALERT (delivery failed): {message}")
-
-
 def check_circuit_breaker(config: dict) -> bool:
     """
     Returns True if the breaker is tripped (trading should stop now).
@@ -89,7 +76,8 @@ def check_circuit_breaker(config: dict) -> bool:
     if config.get("liquidate_on_trigger", True):
         for pos in get_open_positions():
             logger.critical(f"Liquidating {pos['symbol']} ({pos['qty']} units)")
-            execute_sell_order(pos["symbol"], pos["qty"])
+            if execute_sell_order(pos["symbol"], pos["qty"]):
+                notify_sell(pos["symbol"], pos["qty"], reason="circuit-breaker")
 
     state = {
         "trading_disabled": True,
@@ -99,9 +87,8 @@ def check_circuit_breaker(config: dict) -> bool:
     }
     save_state(state_path, state)
 
-    send_alert(
-        config,
+    notify_alert(
         f"Equity fell to ${equity:.2f} (floor ${min_equity:.2f}). "
-        f"Positions liquidated: {config.get('liquidate_on_trigger', True)}. Trading disabled.",
+        f"Positions liquidated: {config.get('liquidate_on_trigger', True)}. Trading disabled."
     )
     return True
