@@ -12,13 +12,21 @@ from src.signals.pullback import check_pullback_signal
 from src.signals.breakout import check_breakout_signal
 from src.execution.risk import calculate_position_size, check_max_positions
 from src.execution.broker import execute_buy_order, get_open_positions, execute_sell_order
-from src.agent.news_judge import NewsJudgeAgent, OllamaClient
+from src.agent.news_judge import NewsJudgeAgent
 
+# --- Setup Logging ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# --- BYPASS AI: Auto-approve everything ---
+class AutoApproveLLM:
+    def analyze_news(self, ticker, headlines):
+        logger.info(f"[{ticker}] Auto-approving news (Ollama bypassed).")
+        return False # False means "No Veto", so we proceed with the trade
+# --------------------------------------------
 
 def load_config():
     with open("config/settings.yaml", "r") as f:
@@ -47,8 +55,8 @@ def run_bot_cycle(config: dict):
     # 1. First, check if we need to dump any bad positions
     check_stop_losses(config)
     
-    # 2. Setup for new trades
-    llm = OllamaClient()
+    # 2. Setup for new trades (Using Auto-Approver instead of Ollama)
+    llm = AutoApproveLLM()
     news_agent = NewsJudgeAgent(llm_client=llm, config=config['news'])
     
     account_capital = get_account_capital()
@@ -99,7 +107,7 @@ def run_bot_cycle(config: dict):
         
         headlines = get_recent_news(ticker)
         if news_agent.should_veto_trade(ticker, headlines):
-            logger.warning(f"[{ticker}] ❌ TRADE VETOED by News Judge.")
+            logger.warning(f"[{ticker}] ❌ TRADE VETOED.")
             continue
             
         max_dollar_amount = account_capital * config['risk']['max_position_pct']
