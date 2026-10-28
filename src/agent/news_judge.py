@@ -45,7 +45,7 @@ Answer ONLY with a JSON object in this format: {{"veto": true}} if it is MATERIA
                 messages=[{'role': 'user', 'content': prompt}],
                 format='json',
                 options={'temperature': 0},
-                host='http://192.168.0.3' # <--- Replace with YOUR Mac's IP
+                host='http://192.168.0.3:11434' # <--- Replace with YOUR Mac's IP
             )
             
             # Parse the JSON response
